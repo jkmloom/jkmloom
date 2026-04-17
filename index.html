@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JKM — Space Research Observatory</title>
+    <meta name="description" content="Jatin Kumar Mehta — Data Scientist, AI Engineer, Space Research Observer.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+    <style>
+        :root {
+            --bg: #060a14;
+            --text: #f0f2f8;
+            --text-bright: #ffffff;
+            --text-body: #c8cedd;
+            --text-dim: #7a8599;
+            --border: rgba(255, 180, 60, 0.12);
+            --border-bright: rgba(255, 180, 60, 0.3);
+            --glass: rgba(6, 10, 20, 0.88);
+            --glass-hover: rgba(10, 16, 32, 0.92);
+            --saffron: #ff9933;
+            --gold: #ffc857;
+            --sakura: #ffb7c5;
+            --indigo-deep: #1a0a3e;
+            --accent: #4ea8ff;
+            --cyan: #00d4ff;
+            --green: #00ff88;
+            --red: #ff4466;
+            --font-display: 'Orbitron', sans-serif;
+            --font-body: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-body);
+            overflow-x: hidden;
+            line-height: 1.8;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Subtle scanline */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,10,30,0.015) 3px, rgba(0,10,30,0.015) 6px);
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* ═══ CANVAS ═══ */
+        #webgl-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
+        #hud-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 5; overflow: hidden; }
+
+        /* ═══ PLANET HUD ═══ */
+        .planet-label {
+            position: absolute;
+            font-family: var(--font-mono);
+            font-size: 0.58rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: rgba(200,210,230,0.9);
+            border-left: 2px solid var(--saffron);
+            padding-left: 10px;
+            opacity: 0;
+            transition: opacity 0.5s;
+            display: flex; flex-direction: column; gap: 1px;
+            line-height: 1.6;
+            background: rgba(6,10,20,0.6);
+            padding: 6px 10px 6px 10px;
+            border-radius: 0 3px 3px 0;
+        }
+        .planet-label .pl-name {
+            font-family: var(--font-display);
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: var(--gold);
+            text-shadow: 0 0 10px rgba(255,180,60,0.5);
+            letter-spacing: 3px;
+            margin-bottom: 2px;
+        }
+        .planet-label .pl-key { color: rgba(200,210,230,0.45); }
+        .planet-label .pl-val { color: var(--cyan); }
+
+        .planet-reticle {
+            position: absolute;
+            width: 40px; height: 40px;
+            border: 1px solid rgba(255,153,51,0.3);
+            border-radius: 50%;
+            transform: translate(-50%,-50%);
+            opacity: 0;
+            animation: ret-spin 15s linear infinite;
+        }
+        .planet-reticle::before, .planet-reticle::after {
+            content: ''; position: absolute; background: var(--saffron);
+        }
+        .planet-reticle::before { top: 50%; left: -6px; width: 5px; height: 1px; }
+        .planet-reticle::after { left: 50%; top: -6px; width: 1px; height: 5px; }
+        @keyframes ret-spin { 100% { transform: translate(-50%,-50%) rotate(360deg); } }
+
+        /* ═══ CORNER TELEMETRY ═══ */
+        .corner-hud {
+            position: fixed;
+            font-family: var(--font-mono);
+            font-size: 0.58rem;
+            letter-spacing: 1px;
+            color: rgba(255,153,51,0.35);
+            z-index: 50;
+            pointer-events: none;
+            text-transform: uppercase;
+            line-height: 2;
+        }
+        .corner-hud.tl { top: 80px; left: 20px; }
+        .corner-hud.tr { top: 80px; right: 20px; text-align: right; }
+        .corner-hud.bl { bottom: 20px; left: 20px; }
+        .corner-hud.br { bottom: 20px; right: 20px; text-align: right; }
+        .corner-hud .v { color: var(--cyan); }
+
+        /* ═══ MANDALA DECORATION (CSS-only) ═══ */
+        .mandala-ring {
+            position: absolute;
+            border: 1px solid rgba(255,153,51,0.08);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        /* ═══ NAVIGATION ═══ */
+        nav {
+            position: fixed; top: 0; width: 100%;
+            padding: 0.8rem 3%;
+            z-index: 100;
+            display: flex; justify-content: space-between; align-items: center;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            background: rgba(6,10,20,0.7);
+            border-bottom: 1px solid rgba(255,153,51,0.08);
+            transition: all 0.4s;
+        }
+        nav.scrolled {
+            background: rgba(6,10,20,0.95);
+            border-bottom: 1px solid rgba(255,153,51,0.15);
+        }
+        .nav-brand {
+            font-family: var(--font-display);
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 5px;
+            color: var(--gold);
+        }
+        .nav-brand .sub {
+            font-family: var(--font-mono);
+            font-size: 0.5rem;
+            font-weight: 300;
+            color: var(--text-dim);
+            display: block;
+            letter-spacing: 1.5px;
+            margin-top: 2px;
+        }
+        .nav-flag {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: var(--font-mono);
+            font-size: 0.55rem;
+            color: var(--text-dim);
+            letter-spacing: 1.5px;
+        }
+        .flag-bar {
+            width: 22px;
+            height: 15px;
+            border-radius: 2px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .flag-bar .f-saffron { flex: 1; background: #ff9933; }
+        .flag-bar .f-white { flex: 1; background: #ffffff; position: relative; }
+        .flag-bar .f-white::after {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 4px; height: 4px;
+            border: 1px solid #000080;
+            border-radius: 50%;
+            transform: translate(-50%,-50%);
+        }
+        .flag-bar .f-green { flex: 1; background: #138808; }
+        .nav-status {
+            display: flex; align-items: center; gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.55rem;
+            color: var(--green);
+            letter-spacing: 1px;
+        }
+        .nav-status .dot {
+            width: 5px; height: 5px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: blink 2s ease infinite;
+        }
+        @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+        .nav-links {
+            display: flex; gap: 0; list-style: none;
+            border: 1px solid rgba(255,153,51,0.12);
+            border-radius: 2px;
+        }
+        .nav-links li { border-right: 1px solid rgba(255,153,51,0.08); }
+        .nav-links li:last-child { border-right: none; }
+        .nav-links a {
+            color: var(--text-body);
+            text-decoration: none;
+            font-family: var(--font-mono);
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            padding: 0.5rem 1.1rem;
+            display: block;
+            transition: all 0.3s;
+        }
+        .nav-links a:hover {
+            color: var(--gold);
+            background: rgba(255,153,51,0.08);
+        }
+
+        /* ═══ MAIN ═══ */
+        main { position: relative; z-index: 10; }
+
+        .section {
+            min-height: 100vh;
+            display: flex; align-items: center;
+            padding: 10rem 5%;
+            position: relative;
+        }
+        .container { max-width: 1200px; width: 100%; margin: 0 auto; }
+
+        /* ═══ TYPOGRAPHY ═══ */
+        h1, h2, h3 {
+            font-family: var(--font-display);
+            font-weight: 700;
+            line-height: 1.15;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            color: var(--text-bright);
+        }
+        h1 {
+            font-size: clamp(2.6rem, 6.5vw, 5rem);
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #fff 0%, var(--gold) 50%, var(--saffron) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 4px 30px rgba(255,153,51,0.2));
+        }
+        h2 {
+            font-size: clamp(1.3rem, 3vw, 2rem);
+            margin-bottom: 2.5rem;
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 16px;
+        }
+        h2::after {
+            content: '';
+            display: block;
+            position: absolute;
+            bottom: -8px; left: 0;
+            width: 50px; height: 2px;
+            background: linear-gradient(90deg, var(--saffron), transparent);
+        }
+        h3 {
+            font-size: 0.85rem;
+            margin-bottom: 0.6rem;
+            letter-spacing: 2px;
+            font-weight: 600;
+        }
+        p {
+            font-size: 1rem;
+            color: var(--text-body);
+            margin-bottom: 1.5rem;
+            font-weight: 400;
+            line-height: 1.9;
+        }
+        strong { color: var(--text-bright); font-weight: 600; }
+
+        /* ═══ SECTION HEADER ═══ */
+        .sec-header {
+            margin-bottom: 3rem;
+        }
+        .sec-id {
+            font-family: var(--font-mono);
+            font-size: 0.55rem;
+            color: var(--saffron);
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            margin-bottom: 0.6rem;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .sec-id::before {
+            content: '';
+            width: 24px; height: 1px;
+            background: var(--saffron);
+        }
+
+
+        /* ═══ GLASS PANELS ═══ */
+        .glass-panel {
+            background: var(--glass);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2rem;
+            transition: all 0.4s;
+            position: relative;
+            overflow: hidden;
+        }
+        .glass-panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--saffron), var(--gold), transparent);
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+        .glass-panel:hover {
+            transform: translateY(-2px);
+            border-color: var(--border-bright);
+            background: var(--glass-hover);
+            box-shadow: 0 8px 40px rgba(0,0,0,0.4), 0 0 20px rgba(255,153,51,0.04);
+        }
+        .glass-panel:hover::before { opacity: 1; }
+
+        /* ═══ GRID ═══ */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+
+        /* ═══ BADGES ═══ */
+        .badge {
+            font-family: var(--font-mono);
+            font-size: 0.55rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            padding: 0.25rem 0.7rem;
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            display: inline-block;
+            margin: 0.2rem 0.3rem 0.2rem 0;
+            color: var(--text-body);
+            transition: all 0.3s;
+        }
+        .badge:hover { border-color: var(--gold); color: var(--gold); }
+        .badge.active { border-color: var(--green); color: var(--green); }
+        .badge.complete { border-color: var(--cyan); color: var(--cyan); }
+
+        /* ═══ BUTTONS ═══ */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 0.75rem 1.8rem;
+            border: 1px solid rgba(255,153,51,0.2);
+            color: var(--text-bright);
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-radius: 2px;
+            text-decoration: none;
+            transition: all 0.3s;
+            background: rgba(255,153,51,0.06);
+            margin-right: 1rem; margin-top: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .btn::after {
+            content: '';
+            position: absolute; top: 0; left: -100%;
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,153,51,0.08), transparent);
+            transition: left 0.5s;
+        }
+        .btn:hover {
+            border-color: var(--saffron);
+            background: rgba(255,153,51,0.1);
+            color: var(--gold);
+            box-shadow: 0 0 30px rgba(255,153,51,0.1);
+        }
+        .btn:hover::after { left: 100%; }
+        .btn.primary {
+            background: linear-gradient(135deg, rgba(255,153,51,0.15), rgba(255,200,87,0.08));
+            border-color: rgba(255,153,51,0.35);
+        }
+
+        /* ═══ METRICS ═══ */
+        .metrics-row {
+            display: flex; gap: 3rem;
+            margin-top: 3rem; padding-top: 2rem;
+            border-top: 1px solid var(--border);
+        }
+        .metric {}
+        .metric-value {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--text-bright);
+            letter-spacing: 2px;
+            line-height: 1;
+        }
+        .metric-label {
+            font-family: var(--font-mono);
+            font-size: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-top: 6px;
+        }
+
+        /* ═══ HERO ═══ */
+        .hero-content { max-width: 720px; }
+        .hero-coord {
+            font-family: var(--font-mono);
+            font-size: 0.6rem;
+            color: var(--saffron);
+            letter-spacing: 3px;
+            margin-bottom: 1.5rem;
+            display: flex; align-items: center; gap: 12px;
+        }
+        .hero-coord::before {
+            content: '';
+            width: 30px; height: 1px;
+            background: var(--saffron);
+        }
+        .hero-role {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--cyan);
+            letter-spacing: 2px;
+            margin-bottom: 1.5rem;
+            display: block;
+        }
+
+        /* ═══ INFO LABEL ═══ */
+        .info-label {
+            font-family: var(--font-mono);
+            font-size: 0.5rem;
+            color: var(--saffron);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 0.8rem;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .info-label::before { content: '▸'; font-size: 0.6rem; }
+
+        /* ═══ SKILL BARS ═══ */
+        .skill-bar-wrap { margin-bottom: 1.2rem; }
+        .skill-bar-header {
+            display: flex; justify-content: space-between;
+            font-family: var(--font-mono);
+            font-size: 0.62rem;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            color: var(--text-body);
+        }
+        .skill-bar-header .pct { color: var(--gold); font-weight: 500; }
+        .skill-bar {
+            height: 3px;
+            background: rgba(255,153,51,0.08);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+        .skill-bar-fill {
+            height: 100%; border-radius: 1px;
+            background: linear-gradient(90deg, var(--saffron), var(--gold));
+            width: 0; transition: width 1.8s cubic-bezier(.22,.61,.36,1);
+        }
+
+        /* ═══ TIMELINE ═══ */
+        .timeline {
+            border-left: 2px solid rgba(255,153,51,0.15);
+            padding-left: 2.5rem; margin-left: 0.5rem;
+        }
+        .timeline-item {
+            position: relative;
+            margin-bottom: 2.5rem;
+            padding: 1.5rem 2rem;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        .timeline-item:hover {
+            border-color: var(--border-bright);
+            background: var(--glass-hover);
+            box-shadow: 0 4px 30px rgba(0,0,0,0.3);
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -2.85rem; top: 1.8rem;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: var(--bg);
+            border: 2px solid var(--saffron);
+            box-shadow: 0 0 12px rgba(255,153,51,0.4);
+        }
+        .timeline-item::after {
+            content: '';
+            position: absolute;
+            left: -2.05rem; top: 2.15rem;
+            width: 20px; height: 1px;
+            background: rgba(255,153,51,0.2);
+        }
+        .timeline-date {
+            font-family: var(--font-mono);
+            font-size: 0.58rem;
+            color: var(--gold);
+            letter-spacing: 2px;
+            margin-bottom: 0.6rem;
+            display: block;
+            text-transform: uppercase;
+        }
+
+        /* ═══ MISSION CARDS ═══ */
+        .mission-card {
+            padding: 2rem;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            transition: all 0.4s;
+            overflow: hidden;
+            position: relative;
+        }
+        .mission-card::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 100%; height: 2px;
+            background: linear-gradient(90deg, var(--saffron), var(--gold), var(--sakura));
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+        .mission-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--border-bright);
+            box-shadow: 0 12px 50px rgba(0,0,0,0.35);
+        }
+        .mission-card:hover::after { opacity: 1; }
+        .mission-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+        .mission-id {
+            font-family: var(--font-mono);
+            font-size: 0.5rem;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+        }
+
+        /* ═══ CONTACT ═══ */
+        .social-links {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;
+        }
+        .social-links a {
+            color: var(--text-body);
+            text-decoration: none;
+            display: flex; align-items: center; gap: 0.6rem;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            padding: 1rem 1.2rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            transition: all 0.3s;
+            letter-spacing: 1px;
+        }
+        .social-links a:hover {
+            border-color: var(--saffron);
+            color: var(--gold);
+            background: rgba(255,153,51,0.06);
+        }
+
+        /* ═══ DECORATIVE SEIGAIHA WAVE (Japanese) ═══ */
+        .wave-divider {
+            width: 100%;
+            height: 60px;
+            overflow: hidden;
+            position: relative;
+            opacity: 0.06;
+        }
+        .wave-divider svg { width: 100%; height: 100%; }
+
+        /* ═══ RANGOLI DOT PATTERN (Indian) ═══ */
+        .rangoli-dots {
+            position: absolute;
+            width: 120px; height: 120px;
+            pointer-events: none;
+            opacity: 0.04;
+        }
+
+        /* ═══ FOOTER ═══ */
+        .footer {
+            padding: 3rem 5%;
+            border-top: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            font-family: var(--font-mono);
+        }
+        .footer p {
+            margin: 0; font-size: 0.55rem;
+            letter-spacing: 2px; text-transform: uppercase;
+            color: var(--text-dim);
+        }
+
+
+        /* ═══ SCROLL REVEAL ═══ */
+        .reveal {
+            opacity: 0; transform: translateY(35px);
+            transition: opacity 1s ease, transform 1s ease;
+        }
+        .reveal.visible { opacity: 1; transform: translateY(0); }
+        .reveal-delay-1 { transition-delay: 0.15s; }
+        .reveal-delay-2 { transition-delay: 0.3s; }
+        .reveal-delay-3 { transition-delay: 0.45s; }
+
+        /* ═══ KANJI WATERMARK ═══ */
+        .section-watermark {
+            position: absolute;
+            right: 5%;
+            top: 50%;
+            transform: translateY(-50%);
+            font-family: var(--font-display);
+            font-size: 6rem;
+            color: rgba(255,153,51,0.02);
+            pointer-events: none;
+            writing-mode: vertical-rl;
+            letter-spacing: 20px;
+            line-height: 1;
+        }
+
+        /* ═══ RESPONSIVE ═══ */
+        @media (max-width: 768px) {
+            .nav-links, .corner-hud, .section-watermark, .nav-flag { display: none; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .section { padding: 6rem 5%; }
+            h1 { font-size: 2.2rem; letter-spacing: 2px; }
+            .metrics-row { gap: 1.5rem; flex-wrap: wrap; }
+            .social-links { grid-template-columns: 1fr; }
+            .metric-value { font-size: 1.5rem; }
+            body::after { display: none; }
+
+        }
+    </style>
+</head>
+<body>
+
+    <div id="webgl-container"></div>
+    <div id="hud-container"></div>
+
+    <!-- Telemetry HUD corners -->
+    <div class="corner-hud tl">
+        SYS: <span class="v">OPERATIONAL</span><br>
+        FPS: <span class="v" id="hud-fps">60</span><br>
+        UTC: <span class="v" id="hud-utc">--:--:--</span>
+    </div>
+    <div class="corner-hud tr">
+        SCROLL: <span class="v" id="hud-scroll">0.0</span>%<br>
+        DEPTH: <span class="v" id="hud-camz">-80</span><br>
+        BODIES: <span class="v">5</span>
+    </div>
+    <div class="corner-hud bl">
+        LAT: <span class="v">28.98°N</span><br>
+        LON: <span class="v">77.70°E</span>
+    </div>
+    <div class="corner-hud br">
+        OBS: <span class="v">JKM-2026</span><br>
+        SEC: <span class="v">α-CENTAURI</span>
+    </div>
+
+    <!-- Navigation -->
+    <nav id="navbar">
+        <div class="nav-brand">
+            JKM
+            <span class="sub">// observatory — v2.6</span>
+        </div>
+        <div class="nav-flag">
+            <div class="flag-bar"><div class="f-saffron"></div><div class="f-white"></div><div class="f-green"></div></div>
+            INDIA
+        </div>
+        <div class="nav-status">
+            <div class="dot"></div>
+            SYS ONLINE
+        </div>
+        <ul class="nav-links">
+            <li><a href="#about">Recon</a></li>
+            <li><a href="#stack">Arsenal</a></li>
+            <li><a href="#missions">Missions</a></li>
+            <li><a href="#logs">Logs</a></li>
+            <li><a href="#contact">Signal</a></li>
+        </ul>
+    </nav>
+
+    <main>
+        <!-- ═══ HERO ═══ -->
+        <section class="section" id="hero">
+            <div class="section-watermark">SPACE</div>
+            <div class="container hero-content">
+                <div class="hero-coord">RA 12h 30m · DEC +28° 15′ · @jkmloom</div>
+                <h1>Jatin Kumar<br>Mehta</h1>
+
+                <span class="hero-role">&gt; Data.Scientist | AI.Engineer | Observer_</span>
+                <p>Building <strong>intelligent systems</strong> that extract meaning from noise. Final-year CSE student fascinated by <strong>space, physics, and mathematics</strong> — applying the same rigour to data science and AI engineering.</p>
+                <a href="#missions" class="btn primary">◈ View Missions</a>
+                <a href="#contact" class="btn">⟡ Open Channel</a>
+
+                <div class="metrics-row">
+                    <div class="metric">
+                        <div class="metric-value">4<span style="font-size:0.6em;color:var(--gold)">th</span></div>
+                        <div class="metric-label">State Hackathon</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">100<span style="font-size:0.6em;color:var(--gold)">+</span></div>
+                        <div class="metric-label">Teams Competed</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">5<span style="font-size:0.6em;color:var(--gold)">+</span></div>
+                        <div class="metric-label">ML Projects</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ ABOUT ═══ -->
+        <section class="section" id="about">
+            <div class="section-watermark">RECON</div>
+            <div class="container">
+                <div class="sec-header">
+                    <div class="sec-id">Section 01</div>
+                    <h2>Field Reconnaissance</h2>
+                </div>
+                <div class="grid-2">
+                    <div class="glass-panel reveal">
+                        <p>I'm a final-year B.Tech CSE student at <strong>ABSS Institute of Technology, Meerut</strong>, graduating in 2026. I work at the intersection of data, artificial intelligence, and real-world systems.</p>
+                        <p>What drives me isn't just the code — it's the <strong>questions underneath it</strong>. Why does a model fail at the edge? What patterns are hiding in the noise?</p>
+                        <p>I'm equally captivated by space exploration, theoretical physics, and pure mathematics. Currently, I am building <strong>Healzenic</strong>, an independent wellness monitoring platform.</p>
+                    </div>
+                    <div style="display: grid; gap: 1.5rem;">
+                        <div class="glass-panel reveal reveal-delay-1" style="padding: 1.5rem;">
+                            <div class="info-label">Education</div>
+                            <h3>B.Tech CSE</h3>
+                            <p style="font-size: 0.88rem; margin:0; font-family: var(--font-mono); letter-spacing: 0.5px; color: var(--text-body);">ABSS Institute of Technology, Meerut<br>2022 — 2026</p>
+                        </div>
+                        <div class="glass-panel reveal reveal-delay-2" style="padding: 1.5rem;">
+                            <div class="info-label">Location</div>
+                            <h3>Meerut, UP — India</h3>
+                            <p style="font-size: 0.88rem; margin:0; font-family: var(--font-mono); letter-spacing: 0.5px; color: var(--text-body);">Open to remote & relocation</p>
+                        </div>
+                        <div class="glass-panel reveal reveal-delay-3" style="padding: 1.5rem;">
+                            <div class="info-label">Research Interests</div>
+                            <h3>Space · Physics · Mathematics</h3>
+                            <p style="font-size: 0.88rem; margin:0; font-family: var(--font-mono); letter-spacing: 0.5px; color: var(--text-body);">Finding patterns in unexpected places.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ STACK ═══ -->
+        <section class="section" id="stack">
+            <div class="section-watermark">ARSENAL</div>
+            <div class="container">
+                <div class="sec-header">
+                    <div class="sec-id">Section 02</div>
+                    <h2>Technical Arsenal</h2>
+                </div>
+                <div class="grid-3">
+                    <div class="glass-panel reveal">
+                        <div class="info-label">Data Science</div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>Python / NumPy / Pandas</span><span class="pct">92%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="92"></div></div>
+                        </div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>Matplotlib / Plotly</span><span class="pct">88%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="88"></div></div>
+                        </div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>Statistics / EDA</span><span class="pct">85%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="85"></div></div>
+                        </div>
+                    </div>
+                    <div class="glass-panel reveal reveal-delay-1">
+                        <div class="info-label">AI / Machine Learning</div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>Neural Networks / DL</span><span class="pct">80%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="80"></div></div>
+                        </div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>NLP / Transformers</span><span class="pct">75%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="75"></div></div>
+                        </div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>Scikit-learn</span><span class="pct">90%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="90"></div></div>
+                        </div>
+                    </div>
+                    <div class="glass-panel reveal reveal-delay-2">
+                        <div class="info-label">Core & Cloud</div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>C++ / DSA</span><span class="pct">78%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="78"></div></div>
+                        </div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>Google Cloud</span><span class="pct">72%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="72"></div></div>
+                        </div>
+                        <div class="skill-bar-wrap">
+                            <div class="skill-bar-header"><span>Linux / Ubuntu</span><span class="pct">82%</span></div>
+                            <div class="skill-bar"><div class="skill-bar-fill" data-w="82"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ MISSIONS ═══ -->
+        <section class="section" id="missions">
+            <div class="section-watermark">MISSIONS</div>
+            <div class="container">
+                <div class="sec-header">
+                    <div class="sec-id">Section 03</div>
+                    <h2>Mission Briefs</h2>
+                </div>
+                <div class="grid-2">
+                    <div class="mission-card reveal">
+                        <div class="mission-header">
+                            <div>
+                                <div class="mission-id">MSN-001</div>
+                                <h3>Healzenic</h3>
+                            </div>
+                            <div class="badge active">● ACTIVE</div>
+                        </div>
+                        <p>Personal wellness and routine monitoring platform built post-hackathon. Calendar-based daily self-reporting and longitudinal trend analysis.</p>
+                        <div class="badge">Full Stack</div> <div class="badge">Health Tech</div> <div class="badge">Next.js</div>
+                    </div>
+                    <div class="mission-card reveal reveal-delay-1">
+                        <div class="mission-header">
+                            <div>
+                                <div class="mission-id">MSN-002</div>
+                                <h3>Climate Dashboard</h3>
+                            </div>
+                            <div class="badge complete">✓ COMPLETE</div>
+                        </div>
+                        <p>Interactive dashboard for long-term climate indicator visualization. Translates complex environmental datasets into clean data stories.</p>
+                        <div class="badge">Data Viz</div> <div class="badge">Pandas</div> <div class="badge">Plotly</div>
+                    </div>
+                    <div class="mission-card reveal reveal-delay-2">
+                        <div class="mission-header">
+                            <div>
+                                <div class="mission-id">MSN-003</div>
+                                <h3>Phishing Classifier</h3>
+                            </div>
+                            <div class="badge complete">✓ COMPLETE</div>
+                        </div>
+                        <p>Security model detecting phishing emails and malicious URLs using content and metadata features.</p>
+                        <div class="badge">Cybersecurity</div> <div class="badge">ML</div> <div class="badge">NLP</div>
+                    </div>
+                    <div class="mission-card reveal reveal-delay-3">
+                        <div class="mission-header">
+                            <div>
+                                <div class="mission-id">MSN-004</div>
+                                <h3>Real Estate Predictor</h3>
+                            </div>
+                            <div class="badge complete">✓ COMPLETE</div>
+                        </div>
+                        <p>Predictive model for house price estimation built during DS internship. Integrated GCP-based ML pipelines with Power BI.</p>
+                        <div class="badge">Regression</div> <div class="badge">GCP</div> <div class="badge">Power BI</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ LOGS ═══ -->
+        <section class="section" id="logs">
+            <div class="section-watermark">LOGS</div>
+            <div class="container" style="max-width: 800px;">
+                <div class="sec-header">
+                    <div class="sec-id">Section 04</div>
+                    <h2>Event Log</h2>
+                </div>
+                <div class="timeline">
+                    <div class="timeline-item reveal">
+                        <span class="timeline-date">Nov 2024 — 4th Place</span>
+                        <h3>State-Level Hackathon</h3>
+                        <p style="margin:0;">Secured 4th place out of 100+ competing teams across the state. Built a health improvement web app without reliance on wearable trackers. Role: Team Lead.</p>
+                    </div>
+                    <div class="timeline-item reveal reveal-delay-1">
+                        <span class="timeline-date">Aug 2023 - Oct 2023 — Internship</span>
+                        <h3>Data Science Intern</h3>
+                        <p style="margin:0;">Developed predictive models for real estate at Training Basket. Created full EDA pipelines using Python, and deployed scalable models via Google Cloud.</p>
+                    </div>
+                    <div class="timeline-item reveal reveal-delay-2">
+                        <span class="timeline-date">Oct 2023 - Nov 2025 — Founder</span>
+                        <h3>Chairman @ Codoko Club</h3>
+                        <p style="margin:0;">Founded and served as first chairman of ABSS's coding club. Mentored members and built a culture of collaborative problem-solving.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ CONTACT ═══ -->
+        <section class="section" id="contact" style="min-height: auto; padding-top: 6rem; padding-bottom: 6rem;">
+            <div class="container" style="max-width: 700px;">
+                <div class="sec-header" style="text-align: center;">
+                    <div class="sec-id" style="justify-content: center;">Section 05</div>
+                    <h2 style="display: block; text-align: center;">Transmit Signal</h2>
+                </div>
+                <p style="text-align: center;">Available for internships, full-time roles, and interesting collaborations. Whether it's a data problem, an AI system, or physics — my channel is open.</p>
+
+                <div class="social-links reveal" style="margin-top: 2rem;">
+                    <a href="mailto:jatinmehtagaya@gmail.com">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        EMAIL
+                    </a>
+                    <a href="https://linkedin.com/in/jkmloom" target="_blank">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h14m-.5 15.5v-5.3a3.26 3.26 0 00-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 011.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 001.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 00-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/></svg>
+                        LINKEDIN
+                    </a>
+                    <a href="https://github.com/jkmloom" target="_blank">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2A10 10 0 002 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0012 2z"/></svg>
+                        GITHUB
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>&copy; 2026 Jatin Kumar Mehta</p>
+            <p>Designed with curiosity</p>
+            <p>Built for the cosmos</p>
+        </footer>
+    </main>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- JAVASCRIPT -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <script>
+    (function() {
+        'use strict';
+
+        // ═══ NAV ═══
+        const navbar = document.getElementById('navbar');
+        window.addEventListener('scroll', () => navbar.classList.toggle('scrolled', window.scrollY > 50));
+
+        // ═══ SCROLL REVEAL ═══
+        const revObs = new IntersectionObserver((entries) => {
+            entries.forEach(e => {
+                if (e.isIntersecting) {
+                    e.target.classList.add('visible');
+                    e.target.querySelectorAll('.skill-bar-fill').forEach(b => { b.style.width = b.dataset.w + '%'; });
+                }
+            });
+        }, { threshold: 0.12 });
+        document.querySelectorAll('.reveal').forEach(el => revObs.observe(el));
+
+        // ═══ TELEMETRY ═══
+        const hudFps = document.getElementById('hud-fps');
+        const hudUtc = document.getElementById('hud-utc');
+        const hudScroll = document.getElementById('hud-scroll');
+        const hudCamz = document.getElementById('hud-camz');
+        let fc = 0, lt = performance.now();
+
+        function updateHud(sp) {
+            fc++;
+            const n = performance.now();
+            if (n - lt >= 1000) { hudFps.textContent = fc; fc = 0; lt = n; }
+            hudUtc.textContent = new Date().toISOString().slice(11, 19);
+            hudScroll.textContent = (sp * 100).toFixed(1);
+        }
+
+        // ═══ THREE.JS SCENE ═══
+        const container = document.getElementById('webgl-container');
+        const hudContainer = document.getElementById('hud-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050a16);
+        scene.fog = new THREE.FogExp2(0x050a16, 0.0007);
+
+        const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1500);
+        camera.position.set(0, 0, 35);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        renderer.toneMapping = THREE.CineonToneMapping;
+        renderer.toneMappingExposure = 1.3;
+        container.appendChild(renderer.domElement);
+
+        // Bloom
+        const rp = new THREE.RenderPass(scene, camera);
+        const bp = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.5, 0.4, 0.85);
+        bp.threshold = 0.1; bp.strength = 1.3; bp.radius = 0.65;
+        const composer = new THREE.EffectComposer(renderer);
+        composer.addPass(rp); composer.addPass(bp);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = innerWidth / innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(innerWidth, innerHeight);
+            composer.setSize(innerWidth, innerHeight);
+        });
+
+        // ═══ SOLAR SYSTEM ═══
+        const solar = new THREE.Group();
+        solar.rotation.x = 0.2;
+        solar.position.set(25, -5, -80);
+        scene.add(solar);
+
+        const loader = new THREE.TextureLoader();
+        const planets = [];
+
+        // Sun
+        const sunGeo = new THREE.SphereGeometry(6, 64, 64);
+        const sunMat = new THREE.MeshBasicMaterial({ color: 0xffeedd });
+        const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+        solar.add(sunMesh);
+
+        // Sun glow layers (saffron tinted — Indian sun feel)
+        [6.5, 7.2, 8.5].forEach((r, i) => {
+            solar.add(new THREE.Mesh(
+                new THREE.SphereGeometry(r, 32, 32),
+                new THREE.MeshBasicMaterial({
+                    color: i === 0 ? 0xff9933 : 0xffcc66,
+                    transparent: true, opacity: 0.12 - i * 0.03,
+                    blending: THREE.AdditiveBlending
+                })
+            ));
+        });
+
+        const sunLight = new THREE.PointLight(0xfff0d0, 4.5, 500);
+        sunMesh.add(sunLight);
+        scene.add(new THREE.AmbientLight(0x1a2040, 1.0));
+
+        // Orbits
+        function drawOrbit(radius) {
+            const pts = [];
+            for (let i = 0; i <= 256; i++) {
+                const a = (i / 256) * Math.PI * 2;
+                pts.push(Math.cos(a) * radius, 0, Math.sin(a) * radius);
+            }
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+            const l = new THREE.Line(g, new THREE.LineDashedMaterial({
+                color: 0x4a6a8c, transparent: true, opacity: 0.35, dashSize: 1.2, gapSize: 0.6
+            }));
+            l.computeLineDistances();
+            solar.add(l);
+
+            // Waypoints
+            const wg = new THREE.BufferGeometry();
+            const wp = [];
+            for (let i = 0; i < 12; i++) {
+                const a = i * Math.PI / 6;
+                wp.push(Math.cos(a) * radius, 0, Math.sin(a) * radius);
+            }
+            wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3));
+            solar.add(new THREE.Points(wg, new THREE.PointsMaterial({ color: 0x6688aa, size: 0.3, sizeAttenuation: true })));
+        }
+
+        // Textures
+        const bumpUrl = 'https://unpkg.com/three-globe/example/img/earth-topology.png';
+        const earthUrl = 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg';
+        const waterUrl = 'https://unpkg.com/three-globe/example/img/earth-water.png';
+        const cloudsUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_clouds_1024.png';
+
+        // Planets
+        const sysMap = [
+            { id: "VULCAN",  dist: 16, size: 1.2, speed: 0.08,  color: 0xcc4422, type: "K-Class Rocky",   mass: "0.22 M⊕", temp: "740K",  atm: "CO₂/SO₂" },
+            { id: "VENETIA", dist: 26, size: 2.2, speed: 0.03,  color: 0x2266cc, type: "Oceanic M-Class", mass: "0.81 M⊕", temp: "290K",  atm: "N₂/O₂" },
+            { id: "ER-05",   dist: 38, size: 3.5, speed: 0.015, color: 0xffffff, type: "Habitable",       mass: "1.00 M⊕", temp: "288K",  atm: "N₂/O₂/Ar", isEarth: true },
+            { id: "JOVIAN",  dist: 56, size: 5.0, speed: 0.009, color: 0xccaacc, type: "Gas Supergiant",  mass: "317 M⊕",  temp: "165K",  atm: "H₂/He",  ring: true },
+            { id: "GLACIUS", dist: 78, size: 0.9, speed: 0.005, color: 0x88bbdd, type: "Cryo Dwarf",      mass: "0.01 M⊕", temp: "44K",   atm: "N₂/CH₄" }
+        ];
+
+        let er05Clouds;
+
+        function makeTex(c1, c2, bands) {
+            const cv = document.createElement('canvas');
+            cv.width = 512; cv.height = 256;
+            const cx = cv.getContext('2d');
+            const b = new THREE.Color(c1), d = new THREE.Color(c2);
+            for (let y = 0; y < cv.height; y++) {
+                const n = bands
+                    ? Math.sin(y*0.08)*0.5 + Math.sin(y*0.3)*0.2 + Math.sin(y*0.018)*0.3
+                    : Math.random()*0.3 + 0.35;
+                const col = new THREE.Color().lerpColors(b, d, (n+1)/2);
+                for (let x = 0; x < cv.width; x++) {
+                    const xn = col.clone();
+                    xn.r += (Math.random()-0.5)*0.03;
+                    xn.g += (Math.random()-0.5)*0.03;
+                    xn.b += (Math.random()-0.5)*0.03;
+                    cx.fillStyle = `rgb(${xn.r*255|0},${xn.g*255|0},${xn.b*255|0})`;
+                    cx.fillRect(x, y, 1, 1);
+                }
+            }
+            return new THREE.CanvasTexture(cv);
+        }
+
+        sysMap.forEach(cfg => {
+            drawOrbit(cfg.dist);
+
+            const pivot = new THREE.Group();
+            solar.add(pivot);
+
+            const pg = new THREE.Group();
+            pg.position.x = cfg.dist;
+            pivot.add(pg);
+
+            // HUD
+            const label = document.createElement('div');
+            label.className = 'planet-label';
+            label.innerHTML = `
+                <div class="pl-name">${cfg.id}</div>
+                <div class="pl-row"><span class="pl-key">CLS:</span> <span class="pl-val">${cfg.type}</span></div>
+                <div class="pl-row"><span class="pl-key">MAS:</span> <span class="pl-val">${cfg.mass}</span></div>
+                <div class="pl-row"><span class="pl-key">TMP:</span> <span class="pl-val">${cfg.temp}</span></div>
+                <div class="pl-row"><span class="pl-key">ATM:</span> <span class="pl-val">${cfg.atm}</span></div>
+            `;
+            hudContainer.appendChild(label);
+
+            const ret = document.createElement('div');
+            ret.className = 'planet-reticle';
+            hudContainer.appendChild(ret);
+
+            let pMat;
+            let ac = new THREE.Color(cfg.color).multiplyScalar(1.2);
+
+            if (cfg.isEarth) {
+                pg.rotation.z = -23.5 * Math.PI / 180;
+                pMat = new THREE.MeshStandardMaterial({
+                    map: loader.load(earthUrl), bumpMap: loader.load(bumpUrl),
+                    bumpScale: 0.12, roughness: 0.65, metalness: 0.1
+                });
+                loader.load(waterUrl, t => { pMat.roughnessMap = t; });
+                er05Clouds = new THREE.Mesh(
+                    new THREE.SphereGeometry(cfg.size + 0.05, 64, 64),
+                    new THREE.MeshStandardMaterial({ map: loader.load(cloudsUrl), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+                );
+                pg.add(er05Clouds);
+                ac = new THREE.Color(0x4488ff);
+
+            } else if (cfg.id === "JOVIAN") {
+                pMat = new THREE.MeshStandardMaterial({ map: makeTex(0xd4ae8b, 0x6b4a2b, true), roughness: 0.5, metalness: 0.0 });
+                ac = new THREE.Color(0xd4aa88);
+
+            } else if (cfg.id === "VULCAN") {
+                pMat = new THREE.MeshStandardMaterial({
+                    map: makeTex(0x993311, 0x441100, false),
+                    bumpMap: loader.load(bumpUrl), bumpScale: 0.2, roughness: 0.9, metalness: 0.15,
+                    emissive: new THREE.Color(0x331100), emissiveIntensity: 0.3
+                });
+
+            } else if (cfg.id === "VENETIA") {
+                pMat = new THREE.MeshStandardMaterial({
+                    map: makeTex(0x224488, 0x1144aa, false),
+                    bumpMap: loader.load(bumpUrl), bumpScale: 0.08, roughness: 0.3, metalness: 0.4
+                });
+
+            } else {
+                pMat = new THREE.MeshStandardMaterial({
+                    map: makeTex(0x88aacc, 0xccddee, false),
+                    bumpMap: loader.load(bumpUrl), bumpScale: 0.05, roughness: 0.2, metalness: 0.6,
+                    emissive: new THREE.Color(0x112233), emissiveIntensity: 0.15
+                });
+            }
+
+            pg.add(new THREE.Mesh(new THREE.SphereGeometry(cfg.size, 64, 64), pMat));
+
+            // Atmosphere
+            const aGeo = new THREE.SphereGeometry(cfg.size * 1.06, 64, 64);
+            const aMat = new THREE.ShaderMaterial({
+                vertexShader: `varying vec3 vN; void main(){ vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+                fragmentShader: `varying vec3 vN; void main(){ float i=pow(0.55-dot(vN,vec3(0,0,1)),3.); gl_FragColor=vec4(${ac.r.toFixed(3)},${ac.g.toFixed(3)},${ac.b.toFixed(3)},1.)*i*2.; }`,
+                blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false
+            });
+            pg.add(new THREE.Mesh(aGeo, aMat));
+
+            if (cfg.ring) {
+                const r1 = new THREE.Mesh(
+                    new THREE.RingGeometry(cfg.size*1.3, cfg.size*2.0, 128),
+                    new THREE.MeshBasicMaterial({ color: 0xaa9977, transparent: true, opacity: 0.3, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })
+                );
+                r1.rotation.x = Math.PI / 2.2;
+                pg.add(r1);
+
+                const r2 = new THREE.Mesh(
+                    new THREE.RingGeometry(cfg.size*1.15, cfg.size*1.28, 128),
+                    new THREE.MeshBasicMaterial({ color: 0x887755, transparent: true, opacity: 0.18, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })
+                );
+                r2.rotation.x = Math.PI / 2.2;
+                pg.add(r2);
+            }
+
+            planets.push({ pivot, group: pg, speed: cfg.speed, isEarth: cfg.isEarth, label, reticle: ret });
+        });
+
+        // ═══ STARS ═══
+        const sGeo = new THREE.BufferGeometry();
+        const sCount = 5500;
+        const sPos = new Float32Array(sCount * 3);
+        const sCol = new Float32Array(sCount * 3);
+        const starColors = [
+            new THREE.Color(0xffffff), new THREE.Color(0xaaccff),
+            new THREE.Color(0xffddaa), new THREE.Color(0xffaaaa),
+            new THREE.Color(0xffccaa), new THREE.Color(0xaaffcc)
+        ];
+        for (let i = 0; i < sCount; i++) {
+            sPos[i*3]   = (Math.random()-0.5)*800;
+            sPos[i*3+1] = (Math.random()-0.5)*800;
+            sPos[i*3+2] = (Math.random()-0.5)*800;
+            const c = starColors[Math.random()*starColors.length|0];
+            sCol[i*3]=c.r; sCol[i*3+1]=c.g; sCol[i*3+2]=c.b;
+        }
+        sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+        sGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 3));
+        const stars = new THREE.Points(sGeo, new THREE.PointsMaterial({
+            size: 0.18, transparent: true, opacity: 0.9, vertexColors: true, sizeAttenuation: true
+        }));
+        scene.add(stars);
+
+        // ═══ SAKURA PARTICLES (Japanese cherry blossom) ═══
+        const sakuraGeo = new THREE.BufferGeometry();
+        const sakuraCount = 200;
+        const sakuraPos = new Float32Array(sakuraCount * 3);
+        const sakuraVel = [];
+        for (let i = 0; i < sakuraCount; i++) {
+            sakuraPos[i*3]   = (Math.random()-0.5)*300;
+            sakuraPos[i*3+1] = (Math.random()-0.5)*300;
+            sakuraPos[i*3+2] = (Math.random()-0.5)*300;
+            sakuraVel.push({ x: (Math.random()-0.5)*0.02, y: -Math.random()*0.03 - 0.01, z: (Math.random()-0.5)*0.01 });
+        }
+        sakuraGeo.setAttribute('position', new THREE.BufferAttribute(sakuraPos, 3));
+        const sakuraMat = new THREE.PointsMaterial({
+            color: 0xffb7c5, size: 0.5, transparent: true, opacity: 0.45,
+            sizeAttenuation: true, blending: THREE.AdditiveBlending
+        });
+        const sakura = new THREE.Points(sakuraGeo, sakuraMat);
+        scene.add(sakura);
+
+        // ═══ NEBULAE ═══
+        const nebulae = [];
+        function addNebula(x,y,z,r,col,op) {
+            const m = new THREE.Mesh(
+                new THREE.SphereGeometry(r,16,16),
+                new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false })
+            );
+            m.position.set(x,y,z);
+            scene.add(m);
+            nebulae.push(m);
+        }
+        // Saffron & indigo nebulae — Indian color scheme
+        addNebula(-120, 40, -200, 55, 0x1a0a2e, 0.07);
+        addNebula(150, -30, -250, 75, 0x0a1530, 0.06);
+        addNebula(0, 80, -300, 90, 0x0f0a20, 0.05);
+        addNebula(-70, -55, -180, 40, 0x2a0a10, 0.06);
+        addNebula(100, 60, -220, 50, 0x1a1000, 0.04); // Warm amber
+
+        // ═══ ANIMATION ═══
+        let scrollY = window.scrollY, currentScroll = 0;
+        let mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
+
+        window.addEventListener('scroll', () => { scrollY = window.scrollY; });
+        document.addEventListener('mousemove', e => {
+            mouseX = (e.clientX / innerWidth) * 2 - 1;
+            mouseY = -(e.clientY / innerHeight) * 2 + 1;
+        });
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+
+            // Orbits
+            planets.forEach(p => {
+                if (!p.isEarth) p.pivot.rotation.y += p.speed * delta;
+                p.group.rotation.y += p.speed * 1.5 * delta;
+            });
+            if (er05Clouds) er05Clouds.rotation.y += 0.04 * delta;
+
+            // Sun pulse
+            sunMesh.scale.setScalar(1 + Math.sin(elapsed * 1.5) * 0.015);
+
+            // Scroll
+            currentScroll += (scrollY - currentScroll) * 0.06;
+            const docH = Math.max(1, document.body.offsetHeight - innerHeight);
+            const sp = Math.min(1.0, currentScroll / docH);
+
+            // Mouse
+            targetX += (mouseX - targetX) * 0.04;
+            targetY += (mouseY - targetY) * 0.04;
+
+            // Camera path
+            let zS=-80, zE=5, xS=20, xE=-8, yS=-5, yE=0;
+            if (innerWidth < 768) { zS=-100; zE=-25; xS=0; xE=0; }
+
+            solar.position.z = zS + sp*(zE-zS);
+            solar.position.x = xS + sp*(xE-xS);
+            solar.position.y = yS + sp*(yE-yS);
+            solar.rotation.x = 0.2 - sp*0.15;
+
+            // ER-05
+            planets.find(p => p.isEarth).pivot.rotation.y = sp * Math.PI - 0.5;
+
+            // HUD Labels
+            planets.forEach(p => {
+                const v = new THREE.Vector3();
+                p.group.getWorldPosition(v);
+                v.project(camera);
+                if (v.z > 1) { p.label.style.opacity='0'; p.reticle.style.opacity='0'; return; }
+                const x = (v.x*0.5+0.5)*innerWidth;
+                const y = (-v.y*0.5+0.5)*innerHeight;
+                p.label.style.transform = `translate(${x+22}px, ${y-22}px)`;
+                p.reticle.style.left = x+'px';
+                p.reticle.style.top = y+'px';
+                const op = (!p.isEarth && sp > 0.15) ? Math.max(0, 1-sp*4) : 0.85;
+                p.label.style.opacity = op;
+                p.reticle.style.opacity = op;
+            });
+
+            // Camera parallax
+            camera.position.x = targetX * 1.5;
+            camera.position.y = targetY * 1.5;
+            stars.rotation.y = elapsed * 0.002;
+
+            // Sakura drift
+            const sArr = sakuraGeo.attributes.position.array;
+            for (let i = 0; i < sakuraCount; i++) {
+                sArr[i*3]   += sakuraVel[i].x + Math.sin(elapsed + i) * 0.003;
+                sArr[i*3+1] += sakuraVel[i].y;
+                sArr[i*3+2] += sakuraVel[i].z;
+                if (sArr[i*3+1] < -150) { sArr[i*3+1] = 150; sArr[i*3] = (Math.random()-0.5)*300; }
+            }
+            sakuraGeo.attributes.position.needsUpdate = true;
+
+            // Nebulae drift
+            nebulae.forEach((n, i) => {
+                n.rotation.y = elapsed * 0.004 * (i+1);
+            });
+
+            // HUD
+            updateHud(sp);
+            hudCamz.textContent = solar.position.z.toFixed(1);
+
+            composer.render();
+        }
+
+        animate();
+    })();
+    </script>
+</body>
+</html>
