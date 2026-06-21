@@ -1,6 +1,6 @@
 <!-- <div align="center"> -->
 
-<img src="assets/spinning_dog.gif" width="50"/>
+<img src="./nervous-dog-spinning.gif" width="50"/>
 
 ## **jatin kumar mehta**
 
